@@ -1,17 +1,12 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
-require("dotenv").config
+require("dotenv").config();
 
 
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
-
 const app = express();
-
 app.use(express.json());
+
 
 app.post('/run', async (req, res) => {
     const { origin, destination } = req.body;
@@ -114,4 +109,6 @@ app.post('/run', async (req, res) => {
 });
 
 
-
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});
