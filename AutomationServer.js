@@ -1,114 +1,89 @@
 const express = require('express');
 const puppeteer = require('puppeteer');
-require("dotenv").config();
 
-
-const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(express.json());
 
+let browser;
+
+// 🔹 Start Puppeteer ONCE
+(async () => {
+    browser = await puppeteer.launch({
+        headless: "new",
+        args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu"
+        ],
+    });
+    console.log("✅ Puppeteer browser started");
+})();
 
 app.post('/run', async (req, res) => {
     const { origin, destination } = req.body;
     let routeRows = [];
-    console.log("Received:", origin, destination);
-
-    const browser = await puppeteer.launch({
-        executablePath:
-            process.env.NODE_ENV === "production"
-                ? process.env.PUPPETEER_EXECUTABLE_PATH
-                : puppeteer.executablePath(),
-
-        args: [
-
-            "--disable-setuid-sandbox",
-            "--no-sandbox",
-            "--single-process",
-            "--no-zygote",
-        ],
-
-    });
-
-    const page = await browser.newPage();
+    let page;
 
     try {
-        await page.goto("https://toll.ph/", { waitUntil: "networkidle2", timeout: 0 });
+        console.log("Received:", origin, destination);
 
-        // ▢ ORIGIN INPUT
-        try {
-            await page.type('input[placeholder="Enter point of origin"]', origin);
-            //   await delay(300);
-            await page.keyboard.press("ArrowDown");
-            await page.keyboard.press("Enter");
-        } catch {
-            throw new Error("Invalid or unrecognized origin.");
-        }
+        page = await browser.newPage();
 
-        // ▢ DESTINATION INPUT
-        try {
-            await page.type('input[placeholder="Enter point of destination"]', destination);
-            // await delay(300);
-            await page.keyboard.press("ArrowDown");
-            await page.keyboard.press("Enter");
-        } catch {
-            throw new Error("Invalid or unrecognized destination.");
-        }
+        await page.goto("https://toll.ph/", {
+            waitUntil: "networkidle2",
+            timeout: 0
+        });
 
-        //  await delay(500);
+        // ORIGIN
+        await page.type('input[placeholder="Enter point of origin"]', origin);
+        await page.keyboard.press("ArrowDown");
+        await page.keyboard.press("Enter");
 
-        // ▢ CALCULATE
-        try {
-            await page.click('text/Calculate');
-            await page.click('text/Calculate');
-        } catch {
-            throw new Error("Failed to click calculate button.");
-        }
+        // DESTINATION
+        await page.type('input[placeholder="Enter point of destination"]', destination);
+        await page.keyboard.press("ArrowDown");
+        await page.keyboard.press("Enter");
 
-        // ▢ RESULT
-        let toll;
-        try {
-            await page.waitForSelector(".text-5xl.font-extrabold.tracking-tight.text-slate-900");
+        // CALCULATE
+        await page.click('text/Calculate');
+        await page.click('text/Calculate');
 
-            toll = await page.$eval(
-                ".text-5xl.font-extrabold.tracking-tight.text-slate-900",
-                el => el.textContent.trim()
-            );
-        } catch {
-            throw new Error("Toll result did not appear. Route may be invalid.");
-        }
+        // RESULT
+        await page.waitForSelector(".text-5xl.font-extrabold.tracking-tight.text-slate-900");
 
-        try {
-            routeRows = await page.evaluate(() => {
-                const rows = document.querySelectorAll('div.flex.flex-row.justify-between');
+        const toll = await page.$eval(
+            ".text-5xl.font-extrabold.tracking-tight.text-slate-900",
+            el => el.textContent.trim()
+        );
 
-                return Array.from(rows).map(row => {
-                    const p = row.querySelectorAll('p');
-
-                    return {
-                        expressway: p[0]?.textContent?.trim() || "",
-                        from: p[1]?.textContent?.trim() || "",
-                        arrow: p[2]?.textContent?.trim() || "",
-                        to: p[3]?.textContent?.trim() || "",
-                        price: row.querySelector('p.text-right')?.textContent?.trim() || "",
-                        rfid: row.querySelector('button div')?.textContent?.trim() || ""
-                    };
-                });
+        // ROUTES
+        routeRows = await page.evaluate(() => {
+            const rows = document.querySelectorAll('div.flex.flex-row.justify-between');
+            return Array.from(rows).map(row => {
+                const p = row.querySelectorAll('p');
+                return {
+                    expressway: p[0]?.textContent?.trim() || "",
+                    from: p[1]?.textContent?.trim() || "",
+                    arrow: p[2]?.textContent?.trim() || "",
+                    to: p[3]?.textContent?.trim() || "",
+                    price: row.querySelector('p.text-right')?.textContent?.trim() || "",
+                    rfid: row.querySelector('button div')?.textContent?.trim() || ""
+                };
             });
-        } catch (err) {
-            console.log("Failed to scrape route rows:", err);
-        }
+        });
 
-        console.log("Toll Fee:", toll);
         return res.json({ toll, routeRows });
 
     } catch (error) {
+        console.error(error);
         return res.status(400).json({ error: error.message });
     } finally {
-        await browser.close();
+        if (page) await page.close(); // ✅ CLOSE PAGE ONLY
     }
 });
 
-
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`🚀 Server running on port ${PORT}`);
 });
